@@ -1,21 +1,15 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
 from rembg import remove, new_session
-from PIL import Image
 import io
+import os
+
+# ✅ Fix model path (prevents repeated download)
+os.environ["U2NET_HOME"] = "/opt/render/project/src/models"
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# lighter rembg model
+# ✅ Use lightweight model (very important for Render free)
 session = new_session("u2netp")
 
 @app.get("/")
@@ -26,22 +20,10 @@ def root():
 async def remove_bg(file: UploadFile = File(...)):
     input_bytes = await file.read()
 
-    # open uploaded image
-    img = Image.open(io.BytesIO(input_bytes)).convert("RGBA")
-
-    # resize large images to reduce memory usage
-    max_size = 1000
-    img.thumbnail((max_size, max_size))
-
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    resized_bytes = buffer.getvalue()
-
-    # background removal with lighter model
-    output_bytes = remove(resized_bytes, session=session)
+    # ✅ Use session here
+    output_bytes = remove(input_bytes, session=session)
 
     return StreamingResponse(
         io.BytesIO(output_bytes),
         media_type="image/png"
     )
-    # updated for lighter model
