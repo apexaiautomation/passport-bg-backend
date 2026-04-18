@@ -1,52 +1,47 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from rembg import remove, new_session
+from PIL import Image
 import io
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://apex-passport-photo.onrender.com",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# lighter rembg model
+session = new_session("u2netp")
+
 @app.get("/")
 def root():
     return {"message": "Server running"}
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
 @app.post("/remove-bg")
 async def remove_bg(file: UploadFile = File(...)):
-    try:
-        if not file.content_type or not file.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Please upload an image file.")
+    input_bytes = await file.read()
 
-        input_bytes = await file.read()
-        if not input_bytes:
-            raise HTTPException(status_code=400, detail="Empty file uploaded.")
+    # open uploaded image
+    img = Image.open(io.BytesIO(input_bytes)).convert("RGBA")
 
-        from rembg import remove
-        output_bytes = remove(input_bytes)
+    # resize large images to reduce memory usage
+    max_size = 1000
+    img.thumbnail((max_size, max_size))
 
-        return StreamingResponse(
-            io.BytesIO(output_bytes),
-            media_type="image/png"
-        )
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    resized_bytes = buffer.getvalue()
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print("REMOVE_BG_ERROR:", str(e))
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+    # background removal with lighter model
+    output_bytes = remove(resized_bytes, session=session)
+
+    return StreamingResponse(
+        io.BytesIO(output_bytes),
+        media_type="image/png"
+    )
+    # updated for lighter model
